@@ -60,6 +60,7 @@ module Requirejs
         dir
         fileExclusionRegExp
         findNestedDependencies
+        generateSourceMaps
         has
         hasOnSave
         include
