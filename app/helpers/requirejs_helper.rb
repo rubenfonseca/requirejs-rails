@@ -64,7 +64,6 @@ module RequirejsHelper
 
   def requirejs_include_tag(name = nil, &block)
     html = ""
-    html.concat requirejs_config(name, &block)
 
     once_guard do
       rjs_attributes = {
@@ -77,6 +76,7 @@ module RequirejsHelper
         if block
 
       html.concat(content_tag(:script, "", rjs_attributes))
+      html.concat(requirejs_config(name, &block))
 
       html.html_safe
     end
