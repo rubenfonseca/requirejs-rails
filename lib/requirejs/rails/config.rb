@@ -99,6 +99,7 @@ module Requirejs
         uglify2
         useStrict
         wrap
+        wrapShim
       }
       end
 
