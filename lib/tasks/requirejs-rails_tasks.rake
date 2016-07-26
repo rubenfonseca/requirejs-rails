@@ -98,7 +98,7 @@ OS X Homebrew users can use 'brew install node'.
       original_cache = requirejs.env.cache
       requirejs.env.cache = nil
 
-      if requirejs.sprockets.respond_to? :each_logical_path
+      if ::Sprockets::VERSION.split(".").first.to_i < 3
         # Sprockets 2.x
         requirejs.env.each_logical_path(requirejs.config.logical_path_patterns) do |logical_path|
           m = ::Requirejs::Rails::Config::BOWER_PATH_PATTERN.match(logical_path)
@@ -130,9 +130,9 @@ OS X Homebrew users can use 'brew install node'.
           asset_logical_path = asset.logical_path
           if requirejs.config.logical_path_patterns.any? { |pattern| pattern.match asset_logical_path }
             puts "Found logical match: #{asset_logical_path}"
-            m = ::Requirejs::Rails::Config::BOWER_PATH_PATTERN.match(logical_path)
+            m = ::Requirejs::Rails::Config::BOWER_PATH_PATTERN.match(asset_logical_path)
             if !m
-              target_file = requirejs.config.source_dir.join(asset.logical_path)
+              target_file = requirejs.config.source_dir.join(asset_logical_path)
               puts "Copying js file #{target_file}"
               asset.write_to(target_file)
             else
