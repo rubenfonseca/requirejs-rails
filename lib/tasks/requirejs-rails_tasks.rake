@@ -51,6 +51,8 @@ namespace :requirejs do
 
     requirejs.env = Rails.application.config.assets
 
+    requirejs.sprockets = Rails.application.assets || ::Sprockets::Railtie.build_environment(Rails.application)
+
     # Preserve the original asset paths, as we'll be manipulating them later
     requirejs.env_paths = requirejs.env.paths.dup
     requirejs.config = Rails.application.config.requirejs
@@ -96,27 +98,49 @@ OS X Homebrew users can use 'brew install node'.
       original_cache = requirejs.env.cache
       requirejs.env.cache = nil
 
-      requirejs.env.each_logical_path(requirejs.config.logical_path_patterns) do |logical_path|
-        m = ::Requirejs::Rails::Config::BOWER_PATH_PATTERN.match(logical_path)
+      if requirejs.sprockets.respond_to? :each_logical_path
+        # Sprockets 2.x
+        requirejs.env.each_logical_path(requirejs.config.logical_path_patterns) do |logical_path|
+          m = ::Requirejs::Rails::Config::BOWER_PATH_PATTERN.match(logical_path)
 
-        if !m
-          asset = requirejs.env.find_asset(logical_path)
+          if !m
+            asset = requirejs.env.find_asset(logical_path)
 
-          if asset
-            file = requirejs.config.source_dir.join(asset.logical_path)
-            file.dirname.mkpath
-            asset.write_to(file)
-          end
-        else
-          bower_logical_path = "#{Pathname.new(logical_path).dirname.to_s}.js"
-          asset = requirejs.env.find_asset(bower_logical_path)
+            if asset
+              file = requirejs.config.source_dir.join(asset.logical_path)
+              file.dirname.mkpath
+              asset.write_to(file)
+            end
+          else
+            bower_logical_path = "#{Pathname.new(logical_path).dirname.to_s}.js"
+            asset = requirejs.env.find_asset(bower_logical_path)
 
-          if asset
-            file = requirejs.config.source_dir.join(bower_logical_path)
-            file.dirname.mkpath
-            asset.write_to(file)
+            if asset
+              file = requirejs.config.source_dir.join(bower_logical_path)
+              file.dirname.mkpath
+              asset.write_to(file)
+            end
           end
         end
+      else
+        # Sprockets 3.x
+        requirejs.sprockets.each_file do |file|
+          asset_uri, deps = requirejs.sprockets.resolve! file
+          asset = requirejs.sprockets.load asset_uri
+          asset_logical_path = asset.logical_path
+          if requirejs.config.logical_path_patterns.any? { |pattern| pattern.match asset_logical_path }
+            puts "Found logical match: #{asset_logical_path}"
+            m = ::Requirejs::Rails::Config::BOWER_PATH_PATTERN.match(logical_path)
+            if !m
+              target_file = requirejs.config.source_dir.join(asset.logical_path)
+              puts "Copying js file #{target_file}"
+              asset.write_to(target_file)
+            else
+              raise "Not supported yet"
+            end
+          end
+        end
+        
       end
 
       # Restore the original JS compressor and cache.
