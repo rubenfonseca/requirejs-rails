@@ -125,19 +125,25 @@ OS X Homebrew users can use 'brew install node'.
       else
         # Sprockets 3.x
         requirejs.sprockets.each_file do |file|
-          asset_uri, deps = requirejs.sprockets.resolve! file
-          asset = requirejs.sprockets.load asset_uri
-          asset_logical_path = asset.logical_path
-          if requirejs.config.logical_path_patterns.any? { |pattern| pattern.match asset_logical_path }
-            puts "Found logical match: #{asset_logical_path}"
-            m = ::Requirejs::Rails::Config::BOWER_PATH_PATTERN.match(asset_logical_path)
-            if !m
-              target_file = requirejs.config.source_dir.join(asset_logical_path)
-              puts "Copying js file #{target_file}"
-              asset.write_to(target_file)
-            else
-              raise "Not supported yet"
+          begin
+            asset_uri, deps = requirejs.sprockets.resolve! file
+            asset = requirejs.sprockets.load asset_uri
+            asset_logical_path = asset.logical_path
+            if requirejs.config.logical_path_patterns.any? { |pattern| pattern.match asset_logical_path }
+              puts "Found logical match: #{asset_logical_path}"
+              m = ::Requirejs::Rails::Config::BOWER_PATH_PATTERN.match(asset_logical_path)
+              if !m
+                target_file = requirejs.config.source_dir.join(asset_logical_path)
+                puts "Copying js file #{target_file}"
+                asset.write_to(target_file)
+              else
+                raise "Not supported yet"
+              end
             end
+          rescue
+            # Ignore if precompiled assets fail.
+            # This happens for example if we stumble on a scss file that has
+            # a variable defined elsewhere.
           end
         end
         
@@ -181,13 +187,17 @@ OS X Homebrew users can use 'brew install node'.
           asset_name = "#{paths[module_name]}.js"
         end
 
-        asset = requirejs.env.find_asset(asset_name)
+        # old Sprockets 2
+        #asset = requirejs.env.find_asset(asset_name)
+        asset = requirejs.sprockets.find_asset(asset_name)
 
         built_asset_path = requirejs.config.build_dir.join(asset_name)
 
         # Compute the digest based on the contents of the compiled file, *not* on the contents of the RequireJS module.
-        file_digest = ::Rails.application.assets.file_digest(built_asset_path.to_s)
-        hex_digest = file_digest.unpack("H*").first
+        # Old Sprockets 2
+        #file_digest = ::Rails.application.assets.file_digest(built_asset_path.to_s)
+        #hex_digest = file_digest.unpack("H*").first
+        hex_digest = requirejs.sprockets.pack_hexdigest(requirejs.sprockets.digest_class.digest(built_asset_path.to_s))
         digest_name = asset.logical_path.gsub(path_extension_pattern) { |ext| "-#{hex_digest}#{ext}" }
 
         digest_asset_path = requirejs.config.target_dir + digest_name
