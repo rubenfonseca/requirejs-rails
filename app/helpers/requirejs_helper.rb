@@ -17,13 +17,14 @@ module RequirejsHelper
   @@_priority = []
 
   def requirejs_config(name = nil, &block)
-    html = ""
     requirejs = Rails.application.config.requirejs
 
     if requirejs.loader == :almond
       name = requirejs.module_name_for(requirejs.build_config['modules'][0])
       return almond_include_tag(name, &block)
     end
+
+    html = ""
 
     unless requirejs.run_config.empty?
       run_config = requirejs.run_config.dup
@@ -44,7 +45,7 @@ module RequirejsHelper
         if run_config.has_key? 'paths'
           # Add paths for assets specified by full URL (on a CDN)
           run_config['paths'].each do |k, v|
-            paths[k] = v if v.is_a?(Array) || v =~ /^https?:/
+            paths[k] = v if v.is_a?(Array) || v =~ /^(https?:)?\/\//
           end
         end
 
