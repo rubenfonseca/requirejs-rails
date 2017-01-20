@@ -27,6 +27,12 @@ class RequirejsRailsConfigTest < ActiveSupport::TestCase
     @cfg = Requirejs::Rails::Config.new(Rails.application)
   end
 
+  def asset_allowed?(asset_path)
+    !!@cfg.logical_path_patterns.find do |logical_path_pattern|
+      logical_path_pattern.match(asset_path)
+    end
+  end
+
   test "config accepts known loaders" do
     @cfg.loader = :almond
     assert_equal :almond, @cfg.loader
@@ -39,10 +45,10 @@ class RequirejsRailsConfigTest < ActiveSupport::TestCase
   end
 
   test "matches configured logical assets" do
-    assert_equal true, @cfg.asset_allowed?('foo.js')
-    assert_equal false, @cfg.asset_allowed?('bar.frobnitz')
-    @cfg.logical_asset_filter += [/\.frobnitz$/]
-    assert_equal true, @cfg.asset_allowed?('bar.frobnitz')
+    assert_equal true, asset_allowed?("foo.js")
+    assert_equal false, asset_allowed?("bar.frobnitz")
+    @cfg.logical_path_patterns.push(Regexp.new("\\.frobnitz\\z"))
+    assert_equal true, asset_allowed?("bar.frobnitz")
   end
 
   test "should have a default empty user_config" do
@@ -110,10 +116,10 @@ class RequirejsHelperTest < ActionView::TestCase
     Rails.application.config.requirejs.delete(:build_config)
   end
 
-  def with_cdn
+  def with_cdn(protocol_relative = false)
     Rails.application.config.requirejs.user_config = {
         "paths" => {
-            "jquery" => "http://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"
+            "jquery" => "#{ protocol_relative ? '' : 'http:' }//ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"
         }
     }
   end
@@ -136,9 +142,13 @@ class RequirejsHelperTest < ActionView::TestCase
   end
 
   test "requirejs_include_tag_with_block" do
-    render text: wrap(requirejs_include_tag("application") do
-      {"class" => controller.class.name.demodulize}
-    end)
+    result = wrap(
+        requirejs_include_tag("application") do
+          {"class" => controller.class.name.demodulize}
+        end
+    )
+
+    render text: result
 
     assert_select "script:first-of-type[src=\"/javascripts/require.js\"]" \
       "[data-class=\"TestController\"]", count: 1
@@ -194,5 +204,14 @@ class RequirejsHelperTest < ActionView::TestCase
     ensure
       Rails.application.config.assets.digest = saved_digest
     end
+  end
+
+  test "requirejs_include_tag with protocol relative CDN asset in paths" do
+    with_cdn(true)
+
+    render text: wrap(requirejs_include_tag)
+
+    assert_select "script:last-of-type",
+                  text: Regexp.new("\\Arequire\\.config\\({.*\"paths\":{.*\"//ajax\\..*\".*}.*}\\);\\z")
   end
 end

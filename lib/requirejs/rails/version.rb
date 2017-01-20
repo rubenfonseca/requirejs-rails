@@ -1,6 +1,6 @@
 module Requirejs
   module Rails
-    Version = "0.9.5"
-    LibVersion = "2.1.15"
+    Version = "1.0.0"
+    LibVersion = "2.1.22"
   end
 end

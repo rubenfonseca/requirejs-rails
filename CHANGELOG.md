@@ -2,6 +2,33 @@
 
 ## requirejs-rails changelog
 
+### v1.0.0
+
+- Update `require.js` and `r.js` to `2.1.22`.
+- Fix a `sass-rails` `3.*.*` backwards compatibility issue (credit `@merqlove`).
+- Fix a Sprockets `3.3.0` backwards compatibility issue (credit `@swils`).
+
+### v0.9.9
+
+- Fix an asset digesting regression in #238 (credit @jonhyman).
+- Update `require.js` and `r.js` to `2.1.19`.
+
+### v0.9.8
+
+- Fix a bad regression and yank v0.9.7.
+
+### v0.9.7
+
+- Fix a corner case where modules could appear in the build config's `paths`.
+- Fix regressions introduced in v0.9.6.
+- Allow protocol relative urls for CDNs in the build config's `paths` (credit @remybach).
+
+### v0.9.6
+
+- Update `require.js` and `r.js` to `2.1.17`, and `almond.js` to `0.3.1`.
+- Improve handling of Bower packages.
+- Make a small fix for Sprockets 3 support.
+
 ### v0.9.5
 
 - Update `require.js` and `r.js` to `2.1.15`, and `almond.js` to `0.3.0`.

@@ -32,6 +32,7 @@ namespace :requirejs do
   end
 
   requirejs = ActiveSupport::OrderedOptions.new
+  path_extension_pattern = Regexp.new("\\.(\\w+)\\z")
 
   task clean: ["requirejs:setup"] do
     FileUtils.remove_entry_secure(requirejs.config.source_dir, true)
@@ -39,7 +40,7 @@ namespace :requirejs do
   end
 
   task setup: ["assets:environment"] do
-    unless defined?(Sprockets)
+    unless defined?(::Sprockets)
       warn "Cannot precompile assets if sprockets is disabled. Please set config.assets.enabled to true"
       exit
     end
@@ -48,7 +49,9 @@ namespace :requirejs do
     # sprockets hooks get executed
     _ = ActionView::Base
 
-    requirejs.env = Rails.application.assets
+    requirejs.env = Rails.application.config.assets
+
+    requirejs.sprockets = Rails.application.assets || ::Sprockets::Railtie.build_environment(Rails.application)
 
     # Preserve the original asset paths, as we'll be manipulating them later
     requirejs.env_paths = requirejs.env.paths.dup
@@ -71,26 +74,20 @@ OS X Homebrew users can use 'brew install node'.
   end
 
   namespace :precompile do
-    task all: ["requirejs:precompile:prepare_source",
-               "requirejs:precompile:generate_rjs_driver",
-               "requirejs:precompile:run_rjs",
-               "requirejs:precompile:digestify_and_compress"]
+    task all: ["requirejs:precompile:digestify_and_compress"]
 
     # Invoke another ruby process if we're called from inside
     # assets:precompile so we don't clobber the environment
     #
     # We depend on test_node here so we'll fail early and hard if node
     # isn't available.
-    task external: ["requirejs:test_node"] do
+    task :external do
       ruby_rake_task "requirejs:precompile:all"
     end
 
     # Copy all assets to the temporary staging directory.
     task prepare_source: ["requirejs:setup",
                           "requirejs:clean"] do
-      bower_json_pattern = Regexp.new("\\A(.*)/bower\\.json\\z")
-      js_ext = requirejs.env.extension_for_mime_type("application/javascript")
-
       requirejs.config.source_dir.mkpath
 
       # Save the original JS compressor and cache, which will be restored later.
@@ -101,21 +98,55 @@ OS X Homebrew users can use 'brew install node'.
       original_cache = requirejs.env.cache
       requirejs.env.cache = nil
 
-      requirejs.env.each_logical_path do |logical_path|
-        m = bower_json_pattern.match(logical_path)
-        bower_logical_path = m && "#{m[1]}#{js_ext}"
+      if ::Sprockets::VERSION.split(".").first.to_i < 3
+        # Sprockets 2.x
+        requirejs.env.each_logical_path(requirejs.config.logical_path_patterns) do |logical_path|
+          m = ::Requirejs::Rails::Config::BOWER_PATH_PATTERN.match(logical_path)
 
-        next \
-          if !(requirejs.config.asset_allowed?(logical_path) || bower_logical_path)
+          if !m
+            asset = requirejs.env.find_asset(logical_path)
 
-        asset = requirejs.env.find_asset(logical_path)
+            if asset
+              file = requirejs.config.source_dir.join(asset.logical_path)
+              file.dirname.mkpath
+              asset.write_to(file)
+            end
+          else
+            bower_logical_path = "#{Pathname.new(logical_path).dirname.to_s}.js"
+            asset = requirejs.env.find_asset(bower_logical_path)
 
-        if asset
-          # If a `bower.json` was found, then substitute the logical path with the parsed module name.
-          filename = requirejs.config.source_dir.join(bower_logical_path || asset.logical_path)
-          filename.dirname.mkpath
-          asset.write_to(filename)
+            if asset
+              file = requirejs.config.source_dir.join(bower_logical_path)
+              file.dirname.mkpath
+              asset.write_to(file)
+            end
+          end
         end
+      else
+        # Sprockets 3.x
+        requirejs.sprockets.each_file do |file|
+          begin
+            asset_uri, deps = requirejs.sprockets.resolve! file
+            asset = requirejs.sprockets.load asset_uri
+            asset_logical_path = asset.logical_path
+            if requirejs.config.logical_path_patterns.any? { |pattern| pattern.match asset_logical_path }
+              puts "Found logical match: #{asset_logical_path}"
+              m = ::Requirejs::Rails::Config::BOWER_PATH_PATTERN.match(asset_logical_path)
+              if !m
+                target_file = requirejs.config.source_dir.join(asset_logical_path)
+                puts "Copying js file #{target_file}"
+                asset.write_to(target_file)
+              else
+                raise "Not supported yet"
+              end
+            end
+          rescue
+            # Ignore if precompiled assets fail.
+            # This happens for example if we stumble on a scss file that has
+            # a variable defined elsewhere.
+          end
+        end
+        
       end
 
       # Restore the original JS compressor and cache.
@@ -128,7 +159,9 @@ OS X Homebrew users can use 'brew install node'.
     end
 
     task run_rjs: ["requirejs:setup",
-                   "requirejs:test_node"] do
+                   "requirejs:test_node",
+                   "requirejs:precompile:prepare_source",
+                   "requirejs:precompile:generate_rjs_driver"] do
       requirejs.config.build_dir.mkpath
       requirejs.config.target_dir.mkpath
       requirejs.config.driver_path.dirname.mkpath
@@ -141,17 +174,38 @@ OS X Homebrew users can use 'brew install node'.
 
     # Copy each built asset, identified by a named module in the
     # build config, to its Sprockets digestified name.
-    task digestify_and_compress: ["requirejs:setup"] do
-      requirejs.config.build_config['modules'].each do |m|
-        asset_name = "#{requirejs.config.module_name_for(m)}.js"
+    task digestify_and_compress: ["requirejs:precompile:run_rjs"] do
+      requirejs.config.build_config["modules"].each do |m|
+        module_name = requirejs.config.module_name_for(m)
+        paths = requirejs.config.build_config["paths"] || {}
+        module_script_name = "#{module_name}.js"
+
+        # Is there a `paths` entry for the module?
+        if !paths[module_name]
+          asset_name = module_script_name
+        else
+          asset_name = "#{paths[module_name]}.js"
+        end
+
+        # old Sprockets 2
+        #asset = requirejs.env.find_asset(asset_name)
+        asset = requirejs.sprockets.find_asset(asset_name)
+
         built_asset_path = requirejs.config.build_dir.join(asset_name)
-        digest_name = asset_name.sub(/\.(\w+)$/) { |ext| "-#{requirejs.builder.digest_for(built_asset_path)}#{ext}" }
+
+        # Compute the digest based on the contents of the compiled file, *not* on the contents of the RequireJS module.
+        # Old Sprockets 2
+        #file_digest = ::Rails.application.assets.file_digest(built_asset_path.to_s)
+        #hex_digest = file_digest.unpack("H*").first
+        hex_digest = requirejs.sprockets.pack_hexdigest(requirejs.sprockets.digest_class.digest(built_asset_path.to_s))
+        digest_name = asset.logical_path.gsub(path_extension_pattern) { |ext| "-#{hex_digest}#{ext}" }
+
         digest_asset_path = requirejs.config.target_dir + digest_name
 
         # Ensure that the parent directory `a/b` for modules with names like `a/b/c` exist.
         digest_asset_path.dirname.mkpath
 
-        requirejs.manifest[asset_name] = digest_name
+        requirejs.manifest[module_script_name] = digest_name
         FileUtils.cp built_asset_path, digest_asset_path
 
         # Create the compressed versions
