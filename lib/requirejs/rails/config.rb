@@ -1,7 +1,6 @@
 require "pathname"
 
 require "active_support/ordered_options"
-require "erubis"
 
 require "requirejs/error"
 require "requirejs/rails"

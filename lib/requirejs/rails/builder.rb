@@ -1,5 +1,6 @@
 require "ostruct"
 require "pathname"
+require "erb"
 
 require "requirejs/rails"
 
@@ -15,7 +16,7 @@ module Requirejs
       end
 
       def generate_rjs_driver
-        templ = Erubis::Eruby.new(@config.driver_template_path.read)
+        templ = ERB.new(@config.driver_template_path.read)
         @config.driver_path.open('w') do |f|
           f.write(templ.result(@config.get_binding))
         end
